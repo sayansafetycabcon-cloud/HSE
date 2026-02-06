@@ -64,6 +64,16 @@
     .pdf-icon{font-size:40px; color:#e74c3c; margin-bottom:10px; display:block; text-decoration:none;}
     .pdf-title{font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
+    /* Automation Center */
+    .automation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px;}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:600}
+    .pill.green{background:rgba(15,155,99,0.12);color:#0f9b63}
+    .pill.orange{background:rgba(243,156,18,0.15);color:#e67e22}
+    .pill.red{background:rgba(231,76,60,0.15);color:#c0392b}
+    .automation-card{border:1px solid #e4eded;border-radius:12px;padding:12px;background:white}
+    .automation-card h4{margin:0 0 10px 0;color:var(--accent-3)}
+    .automation-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
     /* Tables */
     table{width:100%;border-collapse:collapse;color:var(--text-dark);margin-top:10px;}
     th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left;font-size:14px}
@@ -139,6 +149,7 @@
           <li><a href="#" onclick="requireAuthAndGo('report')">Report</a></li>
           <li><a href="#" onclick="requireAuthAndGo('ppe')">PPE</a></li>
           <li><a href="#" onclick="requireAuthAndGo('training')">Training</a></li>
+          <li><a href="#" onclick="requireAuthAndGo('automation')">Automation</a></li>
           <li><a href="#" onclick="navTo('gallery')">Gallery</a></li>
           <li><a href="#" onclick="navTo('policies')">Policies</a></li>
         </ul>
@@ -291,6 +302,90 @@
       </div>
     </section>
 
+    <section id="automation" style="display:none" class="container">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div>
+            <h2>Automation Center</h2>
+            <p class="small">Turn HSE signals into automated actions, audits, and compliance reminders.</p>
+          </div>
+          <div class="automation-actions">
+            <button class="primary admin-only" onclick="runAutomation()">Run Automation</button>
+            <span class="pill green" id="automationSummary">0 actions generated today</span>
+          </div>
+        </div>
+
+        <div class="automation-grid">
+          <div class="automation-card admin-only">
+            <h4>Create Automation Rule</h4>
+            <form id="automationRuleForm" onsubmit="addAutomationRule(event)">
+              <input id="ruleName" placeholder="Rule name" required>
+              <select id="ruleTrigger" style="margin-top:8px" required>
+                <option value="">Select trigger</option>
+                <option value="incident_high">Incident: High or Fatal</option>
+                <option value="ppe_low">PPE: Low stock</option>
+                <option value="training_overdue">Training: Overdue</option>
+                <option value="policy_missing">Policy: Missing documents</option>
+              </select>
+              <input id="ruleAction" placeholder="Action message" style="margin-top:8px" required>
+              <div class="two-cols" style="margin-top:8px">
+                <input id="ruleOwner" placeholder="Owner">
+                <input id="ruleDueDays" type="number" placeholder="Due in days" min="1" value="7">
+              </div>
+              <select id="rulePriority" style="margin-top:8px">
+                <option value="Medium">Priority: Medium</option>
+                <option value="Low">Priority: Low</option>
+                <option value="High">Priority: High</option>
+                <option value="Critical">Priority: Critical</option>
+              </select>
+              <button class="primary" style="margin-top:8px;width:100%;">Save Rule</button>
+            </form>
+          </div>
+
+          <div class="automation-card">
+            <h4>Active Automation Rules</h4>
+            <div style="overflow-x:auto;">
+              <table id="automationRulesTable">
+                <thead><tr><th>Rule</th><th>Trigger</th><th>Owner</th><th>Priority</th><th>Active</th><th>Actions</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="automation-card">
+            <h4>Corrective Actions</h4>
+            <div style="overflow-x:auto;">
+              <table id="automationActionsTable">
+                <thead><tr><th>Action</th><th>Owner</th><th>Priority</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="automation-card admin-only">
+            <h4>Audit Planner</h4>
+            <form id="auditPlanForm" onsubmit="addAuditPlan(event)">
+              <div class="two-cols">
+                <input id="auditSite" placeholder="Site / Area" required>
+                <input id="auditOwner" placeholder="Audit Owner" required>
+              </div>
+              <div class="two-cols" style="margin-top:8px">
+                <input id="auditFrequency" type="number" min="1" placeholder="Frequency (months)" required>
+                <input id="auditNextDue" type="date" required>
+              </div>
+              <button class="primary" style="margin-top:8px;width:100%;">Schedule Audit</button>
+            </form>
+            <div style="overflow-x:auto;margin-top:10px;">
+              <table id="auditPlanTable">
+                <thead><tr><th>Site</th><th>Owner</th><th>Frequency</th><th>Next Due</th><th>Actions</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section id="policies" style="display:none" class="container">
       <div class="card">
         <h2>HSE Policies (PDF)</h2>
@@ -408,6 +503,24 @@
     if (!localStorage.getItem('hse_notices')) {
         DB.set('notices', [{id:1, title:'Welcome!', content:'Use the menu above to navigate the HSE Portal.', active:true}]);
     }
+    if (!localStorage.getItem('hse_automation_rules')) {
+        DB.set('automation_rules', [{
+            id: 1,
+            name: 'High Incident Follow-up',
+            trigger: 'incident_high',
+            action: 'Launch incident investigation and corrective action',
+            owner: 'HSE Lead',
+            dueDays: 7,
+            priority: 'High',
+            active: true
+        }]);
+    }
+    if (!localStorage.getItem('hse_actions')) {
+        DB.set('actions', []);
+    }
+    if (!localStorage.getItem('hse_audit_plans')) {
+        DB.set('audit_plans', []);
+    }
 
     let currentUser = JSON.parse(sessionStorage.getItem('hse_curr'));
     let chartInstance = null;
@@ -469,6 +582,7 @@
         if(id==='dashboard') renderDashboard();
         if(id==='ppe') renderPPE();
         if(id==='training') renderTraining();
+        if(id==='automation') renderAutomation();
         if(id==='policies') renderPolicies();
         if(id==='gallery') renderGallery();
         if(id==='home') { renderNotices(); renderFactories(); renderChart(); refreshStats(); }
@@ -732,6 +846,232 @@
     window.delMod = function(id){ if(confirm('Delete?')) { DB.set('train_mods', DB.get('train_mods').filter(x=>x.id!==id)); renderTraining(); } }
     window.delRec = function(id){ if(confirm('Delete?')) { DB.set('train_recs', DB.get('train_recs').filter(x=>x.id!==id)); renderTraining(); } }
 
+    /* === AUTOMATION CENTER === */
+    function renderAutomation(){
+        renderAutomationRules();
+        renderAutomationActions();
+        renderAuditPlans();
+        updateAutomationSummary();
+    }
+
+    function renderAutomationRules(){
+        const rules = DB.get('automation_rules');
+        const tbody = document.querySelector('#automationRulesTable tbody');
+        tbody.innerHTML = rules.map(r => `
+            <tr>
+                <td>${r.name}</td>
+                <td>${formatTrigger(r.trigger)}</td>
+                <td>${r.owner || '-'}</td>
+                <td>${r.priority}</td>
+                <td><input type="checkbox" ${r.active ? 'checked' : ''} onchange="toggleAutomationRule(${r.id}, this.checked)"></td>
+                <td><button class="btn-danger btn-sm" onclick="deleteAutomationRule(${r.id})">Delete</button></td>
+            </tr>
+        `).join('') || '<tr><td colspan="6">No rules created.</td></tr>';
+    }
+
+    function renderAutomationActions(){
+        const actions = DB.get('actions');
+        const tbody = document.querySelector('#automationActionsTable tbody');
+        tbody.innerHTML = actions.map(a => `
+            <tr>
+                <td>${a.title}</td>
+                <td>${a.owner || '-'}</td>
+                <td>${renderPriority(a.priority)}</td>
+                <td>${a.dueDate ? new Date(a.dueDate).toLocaleDateString() : '-'}</td>
+                <td>${a.status}</td>
+                <td>
+                    ${a.status === 'Open' ? `<button class="btn-action btn-sm" onclick="closeAction(${a.id})">Complete</button>` : ''}
+                    <button class="btn-danger btn-sm" onclick="deleteAction(${a.id})">Delete</button>
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="6">No actions yet.</td></tr>';
+    }
+
+    function renderAuditPlans(){
+        const plans = DB.get('audit_plans');
+        const tbody = document.querySelector('#auditPlanTable tbody');
+        tbody.innerHTML = plans.map(p => `
+            <tr>
+                <td>${p.site}</td>
+                <td>${p.owner}</td>
+                <td>${p.frequency} months</td>
+                <td>${new Date(p.nextDue).toLocaleDateString()}</td>
+                <td>
+                    <button class="btn-action btn-sm" onclick="advanceAudit(${p.id})">Advance</button>
+                    <button class="btn-danger btn-sm" onclick="deleteAuditPlan(${p.id})">Delete</button>
+                </td>
+            </tr>
+        `).join('') || '<tr><td colspan="5">No audits scheduled.</td></tr>';
+    }
+
+    window.addAutomationRule = function(e){
+        e.preventDefault();
+        const rules = DB.get('automation_rules');
+        rules.push({
+            id: Date.now(),
+            name: document.getElementById('ruleName').value,
+            trigger: document.getElementById('ruleTrigger').value,
+            action: document.getElementById('ruleAction').value,
+            owner: document.getElementById('ruleOwner').value,
+            dueDays: parseInt(document.getElementById('ruleDueDays').value || '7', 10),
+            priority: document.getElementById('rulePriority').value,
+            active: true
+        });
+        DB.set('automation_rules', rules);
+        e.target.reset();
+        renderAutomationRules();
+    }
+
+    window.toggleAutomationRule = function(id, active){
+        const rules = DB.get('automation_rules');
+        const idx = rules.findIndex(r => r.id === id);
+        if(idx > -1){ rules[idx].active = active; DB.set('automation_rules', rules); }
+    }
+
+    window.deleteAutomationRule = function(id){
+        if(confirm('Delete this rule?')){
+            DB.set('automation_rules', DB.get('automation_rules').filter(r => r.id !== id));
+            renderAutomationRules();
+        }
+    }
+
+    window.runAutomation = function(){
+        const rules = DB.get('automation_rules').filter(r => r.active);
+        const actions = DB.get('actions');
+        const reports = DB.get('reports');
+        const ppe = DB.get('ppe');
+        const policies = DB.get('policies');
+        const trainings = getOverdueTrainings();
+
+        rules.forEach(rule => {
+            let matches = [];
+            if(rule.trigger === 'incident_high'){
+                matches = reports.filter(r => r.sev === 'High' || r.sev === 'Fatal').map(r => ({
+                    key: r.id,
+                    label: `${r.sev} incident at ${r.loc}`
+                }));
+            }
+            if(rule.trigger === 'ppe_low'){
+                matches = ppe.filter(i => i.qty <= i.reorder).map(i => ({
+                    key: i.id,
+                    label: `${i.name} low stock (${i.qty})`
+                }));
+            }
+            if(rule.trigger === 'training_overdue'){
+                matches = trainings.map(t => ({
+                    key: t.id,
+                    label: `${t.emp} overdue for ${t.mod}`
+                }));
+            }
+            if(rule.trigger === 'policy_missing' && policies.length === 0){
+                matches = [{ key: 'policy-missing', label: 'No active policies uploaded' }];
+            }
+
+            matches.forEach(match => {
+                const ruleKey = `${rule.id}:${match.key}`;
+                if(actions.find(a => a.ruleKey === ruleKey)) return;
+                const dueDate = new Date();
+                dueDate.setDate(dueDate.getDate() + (rule.dueDays || 7));
+                actions.unshift({
+                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    title: `${rule.action} — ${match.label}`,
+                    owner: rule.owner,
+                    priority: rule.priority,
+                    dueDate: dueDate.toISOString(),
+                    status: 'Open',
+                    createdAt: new Date().toISOString(),
+                    ruleKey
+                });
+            });
+        });
+
+        DB.set('actions', actions);
+        renderAutomationActions();
+        updateAutomationSummary();
+    }
+
+    window.closeAction = function(id){
+        const actions = DB.get('actions');
+        const idx = actions.findIndex(a => a.id === id);
+        if(idx > -1){ actions[idx].status = 'Closed'; DB.set('actions', actions); renderAutomationActions(); updateAutomationSummary(); }
+    }
+
+    window.deleteAction = function(id){
+        if(confirm('Delete this action?')){
+            DB.set('actions', DB.get('actions').filter(a => a.id !== id));
+            renderAutomationActions();
+            updateAutomationSummary();
+        }
+    }
+
+    window.addAuditPlan = function(e){
+        e.preventDefault();
+        const plans = DB.get('audit_plans');
+        plans.push({
+            id: Date.now(),
+            site: document.getElementById('auditSite').value,
+            owner: document.getElementById('auditOwner').value,
+            frequency: parseInt(document.getElementById('auditFrequency').value, 10),
+            nextDue: document.getElementById('auditNextDue').value
+        });
+        DB.set('audit_plans', plans);
+        e.target.reset();
+        renderAuditPlans();
+    }
+
+    window.advanceAudit = function(id){
+        const plans = DB.get('audit_plans');
+        const idx = plans.findIndex(p => p.id === id);
+        if(idx === -1) return;
+        const next = new Date(plans[idx].nextDue);
+        next.setMonth(next.getMonth() + parseInt(plans[idx].frequency, 10));
+        plans[idx].nextDue = next.toISOString().slice(0,10);
+        DB.set('audit_plans', plans);
+        renderAuditPlans();
+    }
+
+    window.deleteAuditPlan = function(id){
+        if(confirm('Delete audit plan?')){
+            DB.set('audit_plans', DB.get('audit_plans').filter(p => p.id !== id));
+            renderAuditPlans();
+        }
+    }
+
+    function updateAutomationSummary(){
+        const actions = DB.get('actions');
+        const today = new Date().toDateString();
+        const todayCount = actions.filter(a => new Date(a.createdAt).toDateString() === today).length;
+        document.getElementById('automationSummary').innerText = `${todayCount} actions generated today`;
+    }
+
+    function getOverdueTrainings(){
+        const mods = DB.get('train_mods');
+        const recs = DB.get('train_recs');
+        const now = new Date();
+        return recs.filter(r => {
+            const mod = mods.find(m => m.name === r.mod);
+            const freq = mod ? parseInt(mod.freq, 10) : 12;
+            const due = new Date(r.date);
+            due.setMonth(due.getMonth() + freq);
+            return due < now;
+        });
+    }
+
+    function formatTrigger(trigger){
+        const map = {
+            incident_high: 'Incident: High/Fatal',
+            ppe_low: 'PPE: Low stock',
+            training_overdue: 'Training: Overdue',
+            policy_missing: 'Policy: Missing'
+        };
+        return map[trigger] || trigger;
+    }
+
+    function renderPriority(priority){
+        const pillClass = priority === 'Critical' || priority === 'High' ? 'red' : (priority === 'Medium' ? 'orange' : 'green');
+        return `<span class="pill ${pillClass}">${priority}</span>`;
+    }
+
     /* === POLICIES (PDF) === */
     function renderPolicies(){
         const list = DB.get('policies');
@@ -778,7 +1118,7 @@
     window.toggleChat = function(){ const c = document.getElementById('hseChatBox'); c.classList.toggle('open'); if(c.classList.contains('open')) renderChat(); }
     function renderChat(){ const msgs = DB.get('chat'); document.getElementById('chatBody').innerHTML = msgs.map(m => `<div class="chat-msg ${m.user===currentUser?.username?'me':'other'}"><b>${m.user}:</b> ${m.text}</div>`).join(''); }
     window.sendChat = function(){ const txt = document.getElementById('chatInput').value; if(!txt) return; let msgs = DB.get('chat'); msgs.push({user:currentUser.username, text:txt}); DB.set('chat', msgs); document.getElementById('chatInput').value = ''; renderChat(); }
-    window.toggleMobileMenu = function(){ const m = document.getElementById('mobileMenu'); if(m.style.display==='block') m.style.display='none'; else { m.style.display='block'; const links = [{id:'home',t:'Home'},{id:'dashboard',t:'Dashboard'},{id:'report',t:'Report'},{id:'ppe',t:'PPE'},{id:'training',t:'Training'},{id:'gallery',t:'Gallery'},{id:'policies',t:'Policies'}]; document.getElementById('mobileNavList').innerHTML = links.map(l=>`<li><a href="#" onclick="navTo('${l.id}')">${l.t}</a></li>`).join(''); } }
+    window.toggleMobileMenu = function(){ const m = document.getElementById('mobileMenu'); if(m.style.display==='block') m.style.display='none'; else { m.style.display='block'; const links = [{id:'home',t:'Home'},{id:'dashboard',t:'Dashboard'},{id:'report',t:'Report'},{id:'ppe',t:'PPE'},{id:'training',t:'Training'},{id:'automation',t:'Automation'},{id:'gallery',t:'Gallery'},{id:'policies',t:'Policies'}]; document.getElementById('mobileNavList').innerHTML = links.map(l=>`<li><a href="#" onclick="navTo('${l.id}')">${l.t}</a></li>`).join(''); } }
     window.exportJSON = function(){ const data = JSON.stringify(localStorage); const blob = new Blob([data], {type:'application/json'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='hse_backup.json'; a.click(); }
   </script>
 </body>
