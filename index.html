@@ -73,6 +73,11 @@
     .automation-card{border:1px solid #e4eded;border-radius:12px;padding:12px;background:white}
     .automation-card h4{margin:0 0 10px 0;color:var(--accent-3)}
     .automation-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:12px 0;}
+    .status-card{background:#f9fefe;border:1px solid #e4eded;border-radius:12px;padding:12px;}
+    .status-card .label{font-size:12px;color:var(--muted)}
+    .status-card .value{font-size:20px;font-weight:800;margin-top:6px;color:var(--text-dark)}
+    .status-card .hint{font-size:11px;color:var(--muted);margin-top:4px}
 
     /* Tables */
     table{width:100%;border-collapse:collapse;color:var(--text-dark);margin-top:10px;}
@@ -315,6 +320,29 @@
           </div>
         </div>
 
+        <div class="status-grid">
+          <div class="status-card">
+            <div class="label">Open Actions</div>
+            <div class="value" id="automationOpenCount">0</div>
+            <div class="hint">Total outstanding corrective actions.</div>
+          </div>
+          <div class="status-card">
+            <div class="label">Overdue Actions</div>
+            <div class="value" id="automationOverdueCount">0</div>
+            <div class="hint">Past due date and still open.</div>
+          </div>
+          <div class="status-card">
+            <div class="label">Audits Due (30 days)</div>
+            <div class="value" id="automationAuditDueCount">0</div>
+            <div class="hint">Upcoming inspections and audits.</div>
+          </div>
+          <div class="status-card">
+            <div class="label">Training Overdue</div>
+            <div class="value" id="automationTrainingOverdueCount">0</div>
+            <div class="hint">Records beyond required frequency.</div>
+          </div>
+        </div>
+
         <div class="automation-grid">
           <div class="automation-card admin-only">
             <h4>Create Automation Rule</h4>
@@ -354,6 +382,15 @@
 
           <div class="automation-card">
             <h4>Corrective Actions</h4>
+            <div class="two-cols" style="margin-bottom:10px;">
+              <select id="automationActionFilter" onchange="renderAutomationActions()">
+                <option value="all">All Statuses</option>
+                <option value="open">Open</option>
+                <option value="closed">Closed</option>
+                <option value="overdue">Overdue</option>
+              </select>
+              <input id="automationActionSearch" placeholder="Search actions..." oninput="renderAutomationActions()">
+            </div>
             <div style="overflow-x:auto;">
               <table id="automationActionsTable">
                 <thead><tr><th>Action</th><th>Owner</th><th>Priority</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
@@ -364,6 +401,10 @@
 
           <div class="automation-card admin-only">
             <h4>Audit Planner</h4>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+              <input type="checkbox" id="autoRunToggle" onchange="toggleAutoRun(this.checked)">
+              <label for="autoRunToggle" style="font-size:13px;">Auto-run automation on login</label>
+            </div>
             <form id="auditPlanForm" onsubmit="addAuditPlan(event)">
               <div class="two-cols">
                 <input id="auditSite" placeholder="Site / Area" required>
@@ -521,6 +562,9 @@
     if (!localStorage.getItem('hse_audit_plans')) {
         DB.set('audit_plans', []);
     }
+    if (!localStorage.getItem('hse_auto_run')) {
+        localStorage.setItem('hse_auto_run', 'false');
+    }
 
     let currentUser = JSON.parse(sessionStorage.getItem('hse_curr'));
     let chartInstance = null;
@@ -535,6 +579,7 @@
         checkAuth();
         if(currentUser) navTo('dashboard'); else navTo('home'); 
         if(!DB.get('chat').length) DB.set('chat', [{user:'System', text:'Welcome', time:'Now'}]);
+        runAutomationIfEnabled();
     });
 
     /* === AUTH & NAV === */
@@ -548,6 +593,7 @@
             document.getElementById('loginOverlay').style.display='none';
             checkAuth();
             navTo('dashboard');
+            runAutomationIfEnabled();
         } else { alert('Invalid credentials'); }
     }
 
@@ -852,6 +898,8 @@
         renderAutomationActions();
         renderAuditPlans();
         updateAutomationSummary();
+        const autoRunToggle = document.getElementById('autoRunToggle');
+        if(autoRunToggle){ autoRunToggle.checked = localStorage.getItem('hse_auto_run') === 'true'; }
     }
 
     function renderAutomationRules(){
@@ -871,8 +919,20 @@
 
     function renderAutomationActions(){
         const actions = DB.get('actions');
+        const filter = document.getElementById('automationActionFilter')?.value || 'all';
+        const search = (document.getElementById('automationActionSearch')?.value || '').toLowerCase();
+        const now = new Date();
+        const filtered = actions.filter(a => {
+            const dueDate = a.dueDate ? new Date(a.dueDate) : null;
+            const matchesFilter = filter === 'all' ||
+                (filter === 'open' && a.status === 'Open') ||
+                (filter === 'closed' && a.status === 'Closed') ||
+                (filter === 'overdue' && a.status === 'Open' && dueDate && dueDate < now);
+            const matchesSearch = !search || a.title.toLowerCase().includes(search) || (a.owner || '').toLowerCase().includes(search);
+            return matchesFilter && matchesSearch;
+        });
         const tbody = document.querySelector('#automationActionsTable tbody');
-        tbody.innerHTML = actions.map(a => `
+        tbody.innerHTML = filtered.map(a => `
             <tr>
                 <td>${a.title}</td>
                 <td>${a.owner || '-'}</td>
@@ -1041,7 +1101,15 @@
         const actions = DB.get('actions');
         const today = new Date().toDateString();
         const todayCount = actions.filter(a => new Date(a.createdAt).toDateString() === today).length;
+        const openActions = actions.filter(a => a.status === 'Open');
+        const overdueActions = openActions.filter(a => a.dueDate && new Date(a.dueDate) < new Date());
+        const auditDue = getAuditsDue(30);
+        const trainings = getOverdueTrainings();
         document.getElementById('automationSummary').innerText = `${todayCount} actions generated today`;
+        document.getElementById('automationOpenCount').innerText = openActions.length;
+        document.getElementById('automationOverdueCount').innerText = overdueActions.length;
+        document.getElementById('automationAuditDueCount').innerText = auditDue.length;
+        document.getElementById('automationTrainingOverdueCount').innerText = trainings.length;
     }
 
     function getOverdueTrainings(){
@@ -1055,6 +1123,27 @@
             due.setMonth(due.getMonth() + freq);
             return due < now;
         });
+    }
+
+    function getAuditsDue(days){
+        const plans = DB.get('audit_plans');
+        const now = new Date();
+        const limit = new Date();
+        limit.setDate(limit.getDate() + days);
+        return plans.filter(p => {
+            const due = new Date(p.nextDue);
+            return due >= now && due <= limit;
+        });
+    }
+
+    function runAutomationIfEnabled(){
+        if(localStorage.getItem('hse_auto_run') === 'true' && currentUser){
+            runAutomation();
+        }
+    }
+
+    window.toggleAutoRun = function(enabled){
+        localStorage.setItem('hse_auto_run', enabled ? 'true' : 'false');
     }
 
     function formatTrigger(trigger){
